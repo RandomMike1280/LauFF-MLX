@@ -1,0 +1,4 @@
+-- Copy the generated .local/LauFFConfig.laum into the game's module editor.
+-- Keep false until probes confirm fields, directions, HTTP, and text parsing.
+-- Slot 8 true disables the rectangle in slots 4-7; false/missing preserves it.
+return {"https://script.google.com/macros/s/DEPLOYMENT/exec", "REPLACE_WITH_GAME_TOKEN", false, -1, 1, -1, 1, true}

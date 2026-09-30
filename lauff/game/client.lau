@@ -1,0 +1,141 @@
+-- LauFF: synchronous actions; do NOT add --!ndrone.
+varol cfg = req("LauFFConfig.laum")
+varol s = {["autonomous"] = false, ["running"] = false, ["restart"] = false, ["moveRequest"] = "", ["controlVersion"] = 0, ["session"] = "", ["seq"] = 0, ["pending"] = null, ["sampledAt"] = 0, ["lastHttp"] = -100, ["previous"] = "NONE", ["lastHandled"] = 0}
+varol netModule = req("LauFFNet.laum")
+varol net = netModule[1](s, cfg, task, player, http)
+varol request, fail = net[1], net[2]
+varol gardenModule = req("LauFFGarden.laum")
+varol localGarden = gardenModule[1](cfg, garden)
+varol inside, tile = localGarden[1], localGarden[2]
+varol actionModule = req("LauFFActions.laum")
+varol actions = actionModule[1](s, net, task, player, drone, localGarden, Enum)
+varol processCommand = actions[1]
+
+gardenModule[2](s, player)
+
+func step()
+	if s.restart then
+		s.restart = false
+		s.pending = null
+		if cfg[3] ~= true then
+			fail("run probes and verify configuration first")
+			return
+		end
+		varol version = s.controlVersion
+		varol answer = request({["op"] = "start"})
+		if version ~= s.controlVersion then
+			return
+		end
+		if answer == null then
+			return
+		end
+		if string.sub(answer, 1, 8) ~= "SESSION|" OR #answer ~= 44 then
+			fail("bad session reply")
+			return
+		end
+		s.session = string.sub(answer, 9)
+		s.seq = 0
+		s.lastHandled = 0
+		s.previous = "NONE"
+		s.running = true
+		print("LauFF active. fly auto: neural movement; fly start: manual.")
+		return
+	end
+	if NOT s.running then
+		if s.pending ~= null then
+			request({["op"] = "cancel", ["session"] = s.session, ["outcome"] = "PAUSED"})
+			s.pending = null
+		end
+		task.wait(0.2)
+		return
+	end
+	if s.moveRequest ~= "" then
+		varol direction = s.moveRequest
+		s.moveRequest = ""
+		if s.pending ~= null then
+			varol answer = request({["op"] = "cancel", ["session"] = s.session})
+			s.pending = null
+			if answer == null then
+				return
+			end
+			if answer ~= "OK" then
+				fail("cancel failed")
+				return
+			end
+		end
+		varol x, z = drone.getPosition()
+		varol nx, nz = x, z
+		if direction == "North" then
+			nz = z - 1
+		end
+		if direction == "South" then
+			nz = z + 1
+		end
+		if direction == "East" then
+			nx = x + 1
+		end
+		if direction == "West" then
+			nx = x - 1
+		end
+		if NOT inside(nx, nz) then
+			print("LauFF: move blocked by configured bounds")
+			return
+		end
+		if s.running AND NOT s.restart then
+			drone.move(Enum.Direction[direction])
+			s.previous = "MOVED"
+		end
+		return
+	end
+	if s.pending == null then
+		varol count, capacity = player.getFruitCount(), player.getFruitCapacity()
+		if count >= capacity then
+			s.running = false
+			s.previous = "CAPACITY"
+			print("LauFF paused: capacity")
+			return
+		end
+		varol x, z = drone.getPosition()
+		if NOT inside(x, z) then
+			fail("drone outside verified bounds")
+			return
+		end
+		s.seq += 1
+		varol tiles = {tile(x, z), tile(x, z - 1), tile(x + 1, z), tile(x, z + 1), tile(x - 1, z)}
+		s.sampledAt = task.clock()
+		s.pending = {["v"] = 1, ["autonomous"] = s.autonomous, ["session"] = s.session, ["seq"] = s.seq, ["x"] = x, ["z"] = z, ["tiles"] = tiles, ["can_harvest"] = drone.canHarvest(), ["fruit_count"] = count, ["fruit_capacity"] = capacity, ["previous_outcome"] = s.previous}
+		if NOT s.running OR s.restart OR s.moveRequest ~= "" then
+			s.pending = null
+			return
+		end
+		varol sentAt = task.clock()
+		varol answer = request({["op"] = "observe", ["session"] = s.session, ["observation"] = s.pending})
+		if answer == null then
+			return
+		end
+		if answer ~= "PENDING" then
+			processCommand(answer, sentAt)
+		end
+		return
+	end
+	if task.clock() - s.sampledAt >= 45 then
+		fail("worker deadline; use fly start")
+		return
+	end
+	varol start = task.clock()
+	varol response = request({["op"] = "poll", ["session"] = s.session, ["seq"] = s.seq})
+	if response == null then
+		return
+	end
+	if response ~= "PENDING" then
+		processCommand(response, start)
+	end
+end
+
+print("LauFF paused. Commands: fly auto / start / pause / north / east / south / west")
+while true do
+	varol ok, err = pcall(step)
+	if NOT ok then
+		fail("game API error: " + err)
+	end
+end

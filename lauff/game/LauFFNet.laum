@@ -1,0 +1,123 @@
+-- Authenticated GET transport; shared pause state and request spacing.
+func create(s, cfg, task, player, http)
+	varol url, token = cfg[1], cfg[2]
+func fail(message)
+	s.running = false
+	s.pending = null
+	s.previous = "ERROR"
+	print("LauFF paused: " + message)
+end
+
+func encodeQuery(value)
+	if string.find(value, "[^ -~]") ~= null then
+		return null
+	end
+	value = string.gsub(value, "%%", "%%25")
+	value = string.gsub(value, " ", "%%20")
+	value = string.gsub(value, "!", "%%21")
+	value = string.gsub(value, "\"", "%%22")
+	value = string.gsub(value, "#", "%%23")
+	value = string.gsub(value, "%$", "%%24")
+	value = string.gsub(value, "&", "%%26")
+	value = string.gsub(value, "'", "%%27")
+	value = string.gsub(value, "%(", "%%28")
+	value = string.gsub(value, "%)", "%%29")
+	value = string.gsub(value, "%*", "%%2A")
+	value = string.gsub(value, "%+", "%%2B")
+	value = string.gsub(value, ",", "%%2C")
+	value = string.gsub(value, "/", "%%2F")
+	value = string.gsub(value, ":", "%%3A")
+	value = string.gsub(value, ";", "%%3B")
+	value = string.gsub(value, "<", "%%3C")
+	value = string.gsub(value, "=", "%%3D")
+	value = string.gsub(value, ">", "%%3E")
+	value = string.gsub(value, "%?", "%%3F")
+	value = string.gsub(value, "@", "%%40")
+	value = string.gsub(value, "%[", "%%5B")
+	value = string.gsub(value, "\\", "%%5C")
+	value = string.gsub(value, "%]", "%%5D")
+	value = string.gsub(value, "%^", "%%5E")
+	value = string.gsub(value, "`", "%%60")
+	value = string.gsub(value, "{", "%%7B")
+	value = string.gsub(value, "|", "%%7C")
+	value = string.gsub(value, "}", "%%7D")
+	return value
+end
+
+func request(data)
+	varol preparedAt = task.clock()
+	varol version = s.controlVersion
+	varol delay = 3 - (task.clock() - s.lastHttp)
+	if delay > 0 then
+		task.wait(delay)
+	end
+	data.token = token
+	varol encoded = encodeQuery(http.jsonEncode(data))
+	if encoded == null then
+		fail("unsupported observation text")
+		return null
+	end
+	varol target = url + "?q=" + encoded + "&n=" + task.clock() + "-" + math.random(1, 1000000000)
+	if #target > 8000 then
+		fail("request too large")
+		return null
+	end
+	varol preparedSeconds = task.clock() - preparedAt
+	varol ok, response = false, null
+	varol attempt = 0
+	varol operation = data.op
+	while attempt < 2 do
+		if version ~= s.controlVersion then
+			return null
+		end
+		if s.pending ~= null AND task.clock() - s.sampledAt >= 45 then
+			fail("observation expired; use fly auto or fly start")
+			return null
+		end
+		attempt += 1
+		s.lastHttp = task.clock()
+		varol attemptOk, attemptResponse = pcall(http.get, target)
+		ok = attemptOk
+		response = attemptResponse
+		if version ~= s.controlVersion then
+			return null
+		end
+		if ok then
+			break
+		end
+		varol reason = "network error"
+		if type(response) == "String" then
+			if string.find(response, "timed out") ~= null then
+				reason = "timeout"
+			end
+		end
+		print("LauFF HTTP " + operation + ": " + reason + " (attempt " + attempt + "/2, " + (task.clock() - s.lastHttp) + "s)")
+		if attempt < 2 then
+			print("LauFF request bytes " + #target + ", preparation " + preparedSeconds + "s")
+			if data.op == "observe" then
+				print("LauFF: checking relay receipt; observation age " + (task.clock() - s.sampledAt) + "s")
+				operation = "poll after observe timeout"
+				varol check = {["op"] = "poll", ["token"] = token, ["session"] = data.session, ["seq"] = data.observation.seq}
+				target = url + "?q=" + encodeQuery(http.jsonEncode(check)) + "&n=" + task.clock()
+			end
+			task.wait(3)
+		end
+	end
+	if NOT ok then
+		fail("HTTP " + data.op + " failed twice; use fly auto or fly start for a fresh session")
+		return null
+	end
+	if type(response) ~= "String" then
+		fail("non-text relay response")
+		return null
+	end
+	if string.sub(response, 1, 6) == "ERROR|" then
+		fail(response)
+		return null
+	end
+	return response
+end
+
+return {request, fail}
+end
+return {create}

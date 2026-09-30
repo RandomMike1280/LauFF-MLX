@@ -1,0 +1,27 @@
+# Local credentials and generated game configuration, wherever copied.
+/.local/
+LauFFConfig.laum
+LauFFConfig.laum.*
+relay-properties.json
+.env
+.env.*
+!.env.example
+
+# Local environments, upstream checkout/data, and experimental evidence.
+/.venv/
+/vendor/
+/outputs/
+
+# Python/build caches and editor/OS files.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+/build/
+/dist/
+.DS_Store
+*.swp
+*.swo
+
+# Compact public MaleCNS visualization layout; raw/compiled packs remain excluded.
+!src/lauff/web/brain-layout.npz

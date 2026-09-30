@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/Kisame76/drosophila-brain-mlx.git",
+  "commit": "e417b33616513ef350b1b1c3cdf2b5b7a1799c8e",
+  "dataset": "MaleCNS v1.0",
+  "code_license": "MIT",
+  "data_license": "CC BY 4.0",
+  "source": "https://male-cns.janelia.org/download/"
+}

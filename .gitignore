@@ -46,3 +46,13 @@ graphify-out/*
 !graphify-out/graph.json
 
 .claude/*
+
+# LauFF private configuration, including copies outside the app directory.
+.local/
+LauFFConfig.laum
+LauFFConfig.laum.*
+relay-properties.json
+.env.*
+!.env.example
+# Small public annotation layout shipped with the LauFF viewer.
+!/lauff/src/lauff/web/brain-layout.npz

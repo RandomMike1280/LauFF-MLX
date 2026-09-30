@@ -1,0 +1,52 @@
+-- Run after updating the existing relay deployment to Code.gs v2.
+-- Read-only: authenticated probe only. Never print URLs or raw network errors.
+varol cfg = req("LauFFConfig.laum")
+func encodeQuery(value)
+    if string.find(value, "[^ -~]") ~= null then
+        return null
+    end
+    value = string.gsub(value, "%%", "%%25")
+    value = string.gsub(value, " ", "%%20")
+    value = string.gsub(value, "!", "%%21")
+    value = string.gsub(value, "\"", "%%22")
+    value = string.gsub(value, "#", "%%23")
+    value = string.gsub(value, "%$", "%%24")
+    value = string.gsub(value, "&", "%%26")
+    value = string.gsub(value, "'", "%%27")
+    value = string.gsub(value, "%(", "%%28")
+    value = string.gsub(value, "%)", "%%29")
+    value = string.gsub(value, "%*", "%%2A")
+    value = string.gsub(value, "%+", "%%2B")
+    value = string.gsub(value, ",", "%%2C")
+    value = string.gsub(value, "/", "%%2F")
+    value = string.gsub(value, ":", "%%3A")
+    value = string.gsub(value, ";", "%%3B")
+    value = string.gsub(value, "<", "%%3C")
+    value = string.gsub(value, "=", "%%3D")
+    value = string.gsub(value, ">", "%%3E")
+    value = string.gsub(value, "%?", "%%3F")
+    value = string.gsub(value, "@", "%%40")
+    value = string.gsub(value, "%[", "%%5B")
+    value = string.gsub(value, "\\", "%%5C")
+    value = string.gsub(value, "%]", "%%5D")
+    value = string.gsub(value, "%^", "%%5E")
+    value = string.gsub(value, "`", "%%60")
+    value = string.gsub(value, "{", "%%7B")
+    value = string.gsub(value, "|", "%%7C")
+    value = string.gsub(value, "}", "%%7D")
+    return value
+end
+
+varol data = {["op"] = "probe", ["token"] = cfg[2], ["encoding_test"] = "A & B+50% / Lemon"}
+varol encoded = encodeQuery(http.jsonEncode(data))
+if encoded == null then
+    print("GET probe: encoding failed")
+    return
+end
+varol started = task.clock()
+varol ok, response = pcall(http.get, cfg[1] + "?q=" + encoded + "&n=" + task.clock() + "-" + math.random(1, 1000000000))
+if ok then
+    print("Authenticated GET", response, "elapsed", task.clock() - started)
+else
+    print("Authenticated GET failed; network error redacted", "elapsed", task.clock() - started)
+end

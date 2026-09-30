@@ -1,0 +1,87 @@
+-- Local observations with optional bounds. Unknown tile shapes remain unknown.
+func create(cfg, garden)
+func inside(x, z)
+	if cfg[8] == true then
+		return true
+	end
+	return x >= cfg[4] AND x <= cfg[5] AND z >= cfg[6] AND z <= cfg[7]
+end
+
+func tile(x, z)
+	varol row = {["x"] = x, ["z"] = z, ["known"] = false, ["plant"] = "", ["has_fruit"] = false, ["fruit_percent"] = -1}
+	if NOT inside(x, z) then
+		return row
+	end
+	varol ok, p = pcall(garden.getPlantPosition, x, z)
+	if NOT ok then
+		return row
+	end
+	if p == null then
+		row.known = true
+		return row
+	end
+	if type(p) ~= "List" then
+		return row
+	end
+	-- The actual game wraps the plant under its coordinate-string key.
+	varol entry = p[x + "," + z]
+	if entry == null AND type(p.PlantName) == "String" then
+		entry = p
+	end
+	-- Unrecognized responses remain unknown, rather than becoming empty tiles.
+	if type(entry) ~= "List" then
+		return row
+	end
+	if type(entry.PlantName) ~= "String" then
+		return row
+	end
+	row.known = true
+	row.plant = entry.PlantName
+	row.has_fruit = entry.HasFruit == true
+	if type(entry.FruitPercent) == "Number" then
+		row.fruit_percent = entry.FruitPercent
+	end
+	return row
+end
+
+func movement(action)
+    varol directions = {["MOVE_NORTH"] = {"North", 0, -1, 2}, ["MOVE_EAST"] = {"East", 1, 0, 3}, ["MOVE_SOUTH"] = {"South", 0, 1, 4}, ["MOVE_WEST"] = {"West", -1, 0, 5}}
+    return directions[action]
+end
+return {inside, tile, movement}
+end
+func connect(s, player)
+player.chatted:connect(func(message)
+	if message == "fly pause" then
+		s.controlVersion += 1
+		s.restart = false
+		s.running = false
+		s.moveRequest = ""
+		s.previous = "PAUSED"
+	end
+	if message == "fly start" OR message == "fly auto" then
+		s.autonomous = message == "fly auto"
+		s.controlVersion += 1
+		s.restart = true
+		s.running = false
+		s.moveRequest = ""
+	end
+	if message == "fly north" then
+		s.autonomous = false
+		s.moveRequest = "North"
+	end
+	if message == "fly east" then
+		s.autonomous = false
+		s.moveRequest = "East"
+	end
+	if message == "fly south" then
+		s.autonomous = false
+		s.moveRequest = "South"
+	end
+	if message == "fly west" then
+		s.autonomous = false
+		s.moveRequest = "West"
+	end
+end)
+end
+return {create, connect}

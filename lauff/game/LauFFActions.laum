@@ -1,0 +1,138 @@
+-- Validate and execute neural commands synchronously.
+func create(s, net, task, player, drone, localGarden, Enum)
+	varol request, fail = net[1], net[2]
+func split(text)
+	varol fields = {}
+	while true do
+		varol at = string.find(text, "|")
+		if at == null then
+			fields[#fields + 1] = text
+			return fields
+		end
+		fields[#fields + 1] = string.sub(text, 1, at - 1)
+		if #fields > 7 then
+			return {}
+		end
+		text = string.sub(text, at + 1)
+	end
+end
+
+func acknowledge(outcome)
+	s.previous = outcome
+	varol answer = request({["op"] = "ack", ["session"] = s.session, ["seq"] = s.seq, ["outcome"] = outcome})
+	s.pending = null
+	if answer == null then
+		return
+	end
+	if answer ~= "OK" then
+		fail("outcome acknowledgement failed")
+	end
+end
+
+func processCommand(response, requestStarted)
+	varol f = split(response)
+	if #f ~= 7 then
+		fail("malformed command")
+		return
+	end
+	if f[1] ~= "C" OR f[2] ~= s.session then
+		fail("wrong session")
+		return
+	end
+	varol number, x, z, remaining = tonumber(f[3]), tonumber(f[4]), tonumber(f[5]), tonumber(f[6])
+	if number == null OR x == null OR z == null OR remaining == null then
+		fail("invalid numbers")
+		return
+	end
+	if f[3] ~= "" + number OR f[4] ~= "" + x OR f[5] ~= "" + z OR f[6] ~= "" + remaining then
+		fail("malformed numbers")
+		return
+	end
+	if number ~= s.seq OR number <= s.lastHandled OR x ~= s.pending.x OR z ~= s.pending.z then
+		fail("stale command")
+		return
+	end
+	if remaining == null OR remaining <= 0 OR remaining > 45000 then
+		fail("bad command lifetime")
+		return
+	end
+	if remaining <= (task.clock() - requestStarted) * 1000 OR task.clock() - s.sampledAt >= 45 then
+		fail("expired command")
+		return
+	end
+	varol movement = localGarden[3](f[7])
+	if f[7] ~= "HARVEST" AND f[7] ~= "WAIT" AND movement == null then
+		fail("unknown action")
+		return
+	end
+	s.lastHandled = number
+	if NOT s.running OR s.restart OR s.moveRequest ~= "" then
+		acknowledge("REJECTED")
+		return
+	end
+	varol cx, cz = drone.getPosition()
+	if cx ~= x OR cz ~= z then
+		acknowledge("REJECTED")
+		return
+	end
+	if f[7] == "WAIT" then
+		acknowledge("WAIT")
+		return
+	end
+	if player.getFruitCount() >= player.getFruitCapacity() then
+		s.running = false
+		acknowledge("CAPACITY")
+		print("LauFF paused: fruit capacity reached")
+		return
+	end
+	if movement ~= null then
+		if s.autonomous ~= true OR s.pending.autonomous ~= true then
+			acknowledge("REJECTED")
+			return
+		end
+		varol nx, nz = x + movement[2], z + movement[3]
+		if NOT localGarden[1](nx, nz) OR s.pending.tiles[movement[4]].known ~= true then
+			acknowledge("REJECTED")
+			return
+		end
+		varol mx, mz = drone.getPosition()
+		if mx ~= x OR mz ~= z OR drone.canHarvest() OR player.getFruitCount() >= player.getFruitCapacity() then
+			acknowledge("REJECTED")
+			return
+		end
+		if NOT s.running OR s.restart OR s.moveRequest ~= "" OR task.clock() - s.sampledAt >= 45 OR remaining <= (task.clock() - requestStarted) * 1000 then
+			acknowledge("REJECTED")
+			return
+		end
+		drone.move(Enum.Direction[movement[1]])
+		varol ax, az = drone.getPosition()
+		if ax == nx AND az == nz then
+			acknowledge("MOVED")
+		else
+			s.running = false
+			acknowledge("MOVE_UNCONFIRMED")
+		end
+		return
+	end
+	if NOT drone.canHarvest() then
+		acknowledge("REJECTED")
+		return
+	end
+	-- Recheck events and lifetime immediately before the physical action.
+	if NOT s.running OR s.restart OR s.moveRequest ~= "" OR task.clock() - s.sampledAt >= 45 OR remaining <= (task.clock() - requestStarted) * 1000 then
+		acknowledge("REJECTED")
+		return
+	end
+	drone.harvest()
+	-- A return from harvest is not proof of collection. Confirm the ripe state changed.
+	varol ax, az = drone.getPosition()
+	if ax == x AND az == z AND NOT drone.canHarvest() then
+		acknowledge("HARVEST_CONFIRMED")
+	else
+		acknowledge("HARVEST_UNCONFIRMED")
+	end
+end
+
+return {processCommand}
+end
+return {create}

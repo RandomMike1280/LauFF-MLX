@@ -1,0 +1,53 @@
+-- Read-only startup probe. Direction and harvest tests require explicit chat commands.
+varol cfg = req("LauFFConfig.laum")
+varol x, z = drone.getPosition()
+print("position", x, z)
+print("land level", player.getTileNumber())
+print("fruit item types / capacity", player.getFruitCount(), player.getFruitCapacity())
+print("canHarvest", drone.canHarvest())
+varol offsets = {{0, 0}, {0, -1}, {1, 0}, {0, 1}, {-1, 0}}
+for _, delta inpairs(offsets) do
+    varol ok, data = pcall(garden.getPlantPosition, x + delta[1], z + delta[2])
+    print("tile", x + delta[1], z + delta[2], ok, data)
+end
+print("HTTP: run probe_http.lau separately to verify authenticated GET")
+print("text parsing", string.sub("C|123|WAIT", 1, 1), string.find("C|123|WAIT", "|"), tonumber("123"))
+varol queued = ""
+player.chatted:connect(func(message)
+    if message == "probe north" then
+        queued = "North"
+    end
+    if message == "probe south" then
+        queued = "South"
+    end
+    if message == "probe east" then
+        queued = "East"
+    end
+    if message == "probe west" then
+        queued = "West"
+    end
+    if message == "probe harvest" then
+        queued = "HARVEST"
+    end
+end)
+print("Probe ready. Explicit commands: probe north/east/south/west/harvest. Stop this script before running client.")
+while true do
+    if queued ~= "" then
+        varol action = queued
+        queued = ""
+        varol bx, bz = drone.getPosition()
+        print("before", bx, bz, drone.canHarvest())
+        if action == "HARVEST" then
+            if drone.canHarvest() then
+                drone.harvest()
+            end
+        else
+            drone.move(Enum.Direction[action])
+        end
+        varol ax, az = drone.getPosition()
+        print("after", ax, az, drone.canHarvest())
+        varol tileOk, tileData = pcall(garden.getPlantPosition, ax, az)
+        print("after tile", ax, az, tileOk, tileData)
+    end
+    task.wait(0.3)
+end
